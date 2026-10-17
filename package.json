@@ -1,0 +1,17 @@
+{
+  "name": "grokbot-workflows-cli",
+  "version": "1.0.0",
+  "description": "GROKBOT Gemini CLI Gateway & n8n Autonomous Workflows",
+  "private": true,
+  "bin": {
+    "grokbot-gemini": "./scripts/grokbot-gemini"
+  },
+  "scripts": {
+    "grokbot": "node ./scripts/grokbot-gemini",
+    "ledger": "node ./scripts/grokbot-gemini ledger",
+    "gtd": "node ./scripts/grokbot-gemini gtd",
+    "triage": "node ./scripts/grokbot-gemini triage",
+    "triage:test": "node ./scripts/grokbot-gemini triage --test-suite",
+    "chat": "node ./scripts/grokbot-gemini chat"
+  }
+}
