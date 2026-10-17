@@ -1,0 +1,9 @@
+{
+  "contextFileName": "CLAUDE.md",
+  "general": {
+    "preferredEditor": "cursor"
+  },
+  "model": {
+    "name": "gemini-3-flash-preview"
+  }
+}

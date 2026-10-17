@@ -1,0 +1,266 @@
+#!/usr/bin/env node
+/**
+ * GROKBOT Gemini CLI Bridge (Cursor <-> Google Gemini CLI & n8n Gemini Workflows/Agents)
+ *
+ * Connects the local terminal / Cursor environment to:
+ * 1) Official @google/gemini-cli (`~/.local/bin/gemini` v0.64.0)
+ * 2) n8n Workflow `GROKBOT - Gemini Agent & CLI Gateway` (ID: aL37J7eYs7Prhw0T)
+ *    powered by `models/gemini-3-flash-preview` (via n8n Gateway Credits) with
+ *    live tools for Audit Ledger, GTD Inbox, Gmail (`cdomacedo@gmail.com`), and Notion.
+ * 3) n8n Workflow `GROKBOT - Email Command Center` (ID: 3rinE72XzoqIjEvz)
+ *    powered by `Google Gemini 3 Flash Primary` (`models/gemini-3-flash-preview`).
+ */
+
+const https = require('https');
+const { spawn } = require('child_process');
+const readline = require('readline');
+const path = require('path');
+const os = require('os');
+
+const AGENT_WEBHOOK_URL =
+  process.env.GROKBOT_GEMINI_AGENT_URL ||
+  'https://gavi22.app.n8n.cloud/webhook/grokbot-gemini-agent';
+
+const TRIAGE_WEBHOOK_URL =
+  process.env.GROKBOT_EMAIL_TRIAGE_URL ||
+  'https://gavi22.app.n8n.cloud/webhook/grokbot-email-command-center-run';
+
+const GEMINI_BIN =
+  process.env.GEMINI_CLI_BIN ||
+  path.join(os.homedir(), '.local', 'bin', 'gemini');
+
+const C = {
+  reset: '\x1b[0m',
+  bold: '\x1b[1m',
+  dim: '\x1b[2m',
+  cyan: '\x1b[36m',
+  blue: '\x1b[34m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  magenta: '\x1b[35m',
+  red: '\x1b[31m',
+};
+
+function postJson(urlStr, payload) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(urlStr);
+    const body = JSON.stringify(payload);
+    const req = https.request(
+      {
+        hostname: url.hostname,
+        port: url.port || 443,
+        path: url.pathname + url.search,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+        },
+        timeout: 90000,
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk) => (data += chunk));
+        res.on('end', () => {
+          try {
+            resolve({ status: res.statusCode, data: JSON.parse(data) });
+          } catch {
+            resolve({ status: res.statusCode, data: { raw: data } });
+          }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy(new Error('Request timed out after 90s'));
+    });
+    req.write(body);
+    req.end();
+  });
+}
+
+function printBanner() {
+  console.log(
+    `${C.bold}${C.cyan}✦ GROKBOT Gemini CLI${C.reset} ${C.dim}(Google Gemini 3 Flash + n8n Autonomous Agent Gateway)${C.reset}`
+  );
+}
+
+function printHelp() {
+  printBanner();
+  console.log(`
+${C.bold}Uso:${C.reset}
+  ${C.green}grokbot-gemini ask "<pergunta>"${C.reset}          Envia pergunta ao GROKBOT Gemini Executive Agent (n8n + Gemini 3 Flash)
+  ${C.green}grokbot-gemini ledger${C.reset}                    Resumo executivo em tempo real do Ledger de Emails, Faturas e Pedidos
+  ${C.green}grokbot-gemini gtd${C.reset}                       Lista tarefas pendentes na Inbox GTD via Google Gemini
+  ${C.green}grokbot-gemini gmail "<filtro>"${C.reset}          Pesquisa e analisa e-mails no Gmail (cdomacedo@gmail.com) via Gemini
+  ${C.green}grokbot-gemini notion "<termo>"${C.reset}          Pesquisa paginas e briefings no Notion via Gemini
+  ${C.green}grokbot-gemini triage [--test-suite]${C.reset}     Dispara o GROKBOT Email Command Center (classificador Gemini 3 Flash)
+  ${C.green}grokbot-gemini chat${C.reset}                      Inicia sessao interativa no terminal com memoria executiva
+  ${C.green}grokbot-gemini native [args...]${C.reset}          Executa o binario oficial @google/gemini-cli (v0.64.0) localmente
+  ${C.green}grokbot-gemini --json "<pergunta>"${C.reset}       Retorna o JSON puro da execucao do agente Gemini
+
+${C.bold}Workflows & Agentes Conectados (gavi22.app.n8n.cloud):${C.reset}
+  • ${C.cyan}GROKBOT - Gemini Agent & CLI Gateway${C.reset} (ID: ${C.bold}aL37J7eYs7Prhw0T${C.reset})
+    Modelo primario: ${C.yellow}models/gemini-3-flash-preview${C.reset} (n8n Gateway Credits)
+    Ferramentas: Ledger Data Table, Inbox GTD Data Table, Gmail Tool, Notion Tool
+  • ${C.cyan}GROKBOT - Email Command Center${C.reset} (ID: ${C.bold}3rinE72XzoqIjEvz${C.reset})
+    Modelo primario: ${C.yellow}models/gemini-3-flash-preview${C.reset} + Fallback: ${C.dim}claude-haiku-4-5-20251001${C.reset}
+`);
+}
+
+async function askAgent(prompt, options = {}) {
+  const sessionId = options.sessionId || `cursor-cli-${Date.now()}`;
+  if (!options.rawJson) {
+    printBanner();
+    console.log(`${C.dim}→ Consultando ${C.yellow}models/gemini-3-flash-preview${C.reset}${C.dim} (sessao: ${sessionId})...${C.reset}\n`);
+  }
+  const res = await postJson(AGENT_WEBHOOK_URL, {
+    prompt,
+    sessionId,
+  });
+  if (options.rawJson) {
+    console.log(JSON.stringify(res.data, null, 2));
+    return res.data;
+  }
+  if (res.data && res.data.response) {
+    console.log(res.data.response);
+    console.log(
+      `\n${C.dim}[Modelo: ${res.data.model || 'models/gemini-3-flash-preview'} | Agente: ${res.data.agent || 'GROKBOT Gemini Executive Agent'} | ${res.data.timestamp || ''}]${C.reset}`
+    );
+  } else {
+    console.log(JSON.stringify(res.data, null, 2));
+  }
+  return res.data;
+}
+
+async function runTriage(isTestSuite, customPayload) {
+  printBanner();
+  const payload = customPayload
+    ? JSON.parse(customPayload)
+    : isTestSuite
+    ? { test_suite: true }
+    : {};
+  console.log(
+    `${C.dim}→ Disparando ${C.cyan}GROKBOT - Email Command Center${C.reset}${C.dim} (Google Gemini 3 Flash Primary)...${C.reset}`
+  );
+  const res = await postJson(TRIAGE_WEBHOOK_URL, payload);
+  console.log(`${C.green}✓ Status HTTP ${res.status}:${C.reset}`, JSON.stringify(res.data));
+  if (isTestSuite) {
+    console.log(
+      `${C.dim}→ Suite de teste enviada (3 e-mails simulados: ACTION_REQUIRED, ORDER_TRACKING, BILL_OR_SUBSCRIPTION). Use 'grokbot-gemini ledger' em alguns segundos para ver o resultado.${C.reset}`
+    );
+  }
+}
+
+async function runInteractiveChat() {
+  printBanner();
+  const sessionId = `cursor-repl-${Date.now()}`;
+  console.log(
+    `${C.green}Sessao interativa iniciada${C.reset} ${C.dim}(sessionId: ${sessionId}). Digite 'sair' ou Ctrl+C para encerrar.${C.reset}\n`
+  );
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    prompt: `${C.bold}${C.cyan}gemini>${C.reset} `,
+  });
+  rl.prompt();
+  rl.on('line', async (line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      rl.prompt();
+      return;
+    }
+    if (trimmed.toLowerCase() === 'sair' || trimmed.toLowerCase() === 'exit') {
+      rl.close();
+      return;
+    }
+    try {
+      const res = await postJson(AGENT_WEBHOOK_URL, {
+        prompt: trimmed,
+        sessionId,
+      });
+      console.log(`\n${res.data?.response || JSON.stringify(res.data)}\n`);
+    } catch (err) {
+      console.error(`${C.red}Erro:${C.reset} ${err.message}`);
+    }
+    rl.prompt();
+  });
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+  if (args.length === 0 || args[0] === '--help' || args[0] === '-h' || args[0] === 'help') {
+    printHelp();
+    return;
+  }
+
+  const cmd = args[0];
+
+  if (cmd === 'native' || cmd === 'cli') {
+    const child = spawn(GEMINI_BIN, args.slice(1), { stdio: 'inherit' });
+    child.on('exit', (code) => process.exit(code || 0));
+    return;
+  }
+
+  if (cmd === 'chat' || cmd === 'repl') {
+    await runInteractiveChat();
+    return;
+  }
+
+  if (cmd === 'triage') {
+    const isTest = args.includes('--test-suite') || args.includes('--test');
+    const jsonIdx = args.indexOf('--payload');
+    const customPayload = jsonIdx !== -1 ? args[jsonIdx + 1] : null;
+    await runTriage(isTest, customPayload);
+    return;
+  }
+
+  if (cmd === 'ledger' || cmd === 'status') {
+    await askAgent(
+      'Consulte a ferramenta Consultar Ledger de Emails e Financas e apresente um resumo executivo dos ultimos registros processados (assunto, remetente, rota autonoma, valor financeiro, prazo/entrega e acao tomada).'
+    );
+    return;
+  }
+
+  if (cmd === 'gtd') {
+    await askAgent(
+      'Consulte a ferramenta Consultar Inbox GTD e liste as tarefas GTD capturadas mais recentes com seus links, notas e datas.'
+    );
+    return;
+  }
+
+  if (cmd === 'gmail') {
+    const filter = args.slice(1).join(' ') || 'is:inbox';
+    await askAgent(
+      `Use a ferramenta Buscar Emails no Gmail com a query "${filter}" e resuma os e-mails encontrados de forma executiva.`
+    );
+    return;
+  }
+
+  if (cmd === 'notion') {
+    const query = args.slice(1).join(' ') || 'GROKBOT';
+    await askAgent(
+      `Use a ferramenta Pesquisar Paginas no Notion procurando por "${query}" e liste as paginas encontradas com seus titulos e URLs.`
+    );
+    return;
+  }
+
+  if (cmd === '--json') {
+    const prompt = args.slice(1).join(' ');
+    await askAgent(prompt, { rawJson: true });
+    return;
+  }
+
+  if (cmd === 'ask' || cmd === '-p' || cmd === '--prompt') {
+    const prompt = args.slice(1).join(' ');
+    await askAgent(prompt);
+    return;
+  }
+
+  // Default: treat all arguments as a prompt to the Gemini Agent
+  await askAgent(args.join(' '));
+}
+
+main().catch((err) => {
+  console.error(`${C.red}Erro ao executar grokbot-gemini:${C.reset}`, err.message);
+  process.exit(1);
+});

@@ -5,10 +5,10 @@ import {
 } from "cursor/canvas";
 
 const WF_URL = "https://gavi22.app.n8n.cloud/workflow/3rinE72XzoqIjEvz";
-const EXEC_ID = "114";
-const DURATION_MS = 23151;
-const MODE = "webhook";
-const STARTED = "2026-10-17T00:44:50.906Z";
+const EXEC_ID = "127";
+const DURATION_MS = 39169;
+const MODE = "webhook (Gemini 3 Flash)";
+const STARTED = "2026-10-17T04:36:00.273Z";
 
 const NODES = [
   "On-Demand Batch Trigger","Is Simulated Test Batch?","Inject Simulated Test Suite",
@@ -49,7 +49,7 @@ const STEPS: Step[] = [
   { name: "Inject Simulated Test Suite", index: 2, ms: 1718, items: 3, offset: 11, stage: "Ingest", note: "3 e-mails: ACTION, ORDER, BILL" },
   { name: "Normalize Email and Label Map", index: 3, ms: 11, items: 3, offset: 1729, stage: "Ingest", note: "is_simulated=true" },
   { name: "Skip Processed Emails", index: 4, ms: 23, items: 3, offset: 1740, stage: "Ingest", note: "Dedup Data Table" },
-  { name: "AI Autonomous Email Classifier", index: 5, ms: 16217, items: 3, offset: 1763, stage: "AI", note: "Claude Haiku 5.5 + Parser" },
+  { name: "AI Autonomous Email Classifier", index: 5, ms: 33603, items: 3, offset: 1763, stage: "AI", note: "Google Gemini 3 Flash Primary + Fallback Claude Haiku 5.5" },
   { name: "Resolve Decision Contract", index: 12, ms: 1629, items: 3, offset: 17980, stage: "AI", note: "ACTION + ORDER + BILL" },
   { name: "Skip Gmail Side Effects if Non-Gmail", index: 13, ms: 9, items: 3, offset: 19609, stage: "Route", note: "pula labels Gmail (simulado)" },
   { name: "Route by Autonomous Intent", index: 14, ms: 30, items: 3, offset: 19619, stage: "Route", note: "Switch 5 saídas" },
@@ -78,8 +78,9 @@ const PREVIEWS: Record<string, unknown> = {
 };
 
 const OTHER_EXECS = [
+  ["#127 test_suite (Gemini 3 Flash Primary)", "webhook", "success", "39.2 s"],
   ["#116 Digest 08:05/18:05", "trigger", "success", "2.1 s"],
-  ["#114 test_suite webhook", "webhook", "success", "23.2 s"],
+  ["#114 test_suite (Claude Haiku 5.5)", "webhook", "success", "23.2 s"],
   ["#113 test_suite webhook", "webhook", "success", "22.9 s"],
   ["#111 real Gmail batch", "manual", "success", "73.1 s"],
 ];
