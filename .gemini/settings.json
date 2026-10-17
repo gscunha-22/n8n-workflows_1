@@ -8,8 +8,11 @@
   },
   "mcpServers": {
     "claude": {
-      "httpUrl": "https://cloud.anythingmcp.com/mcp/cmvby39vb3n5s01l4ftnfk7gt",
       "url": "https://cloud.anythingmcp.com/mcp/cmvby39vb3n5s01l4ftnfk7gt",
+      "type": "http"
+    },
+    "anythingmcp": {
+      "url": "https://cloud.anythingmcp.com/mcp/cmvbdpb9l2tbi01l4ftnfk7gt",
       "type": "http"
     }
   }

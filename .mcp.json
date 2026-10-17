@@ -3,6 +3,10 @@
     "claude": {
       "type": "http",
       "url": "https://cloud.anythingmcp.com/mcp/cmvby39vb3n5s01l4ftnfk7gt"
+    },
+    "anythingmcp": {
+      "type": "http",
+      "url": "https://cloud.anythingmcp.com/mcp/cmvbdpb9l2tbi01l45vejqj1k"
     }
   }
 }
