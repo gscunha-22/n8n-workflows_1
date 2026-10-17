@@ -27,7 +27,7 @@ const TRIAGE_WEBHOOK_URL =
 
 const GEMINI_BIN =
   process.env.GEMINI_CLI_BIN ||
-  path.join(os.homedir(), '.local', 'bin', 'gemini');
+  (process.platform === 'win32' ? 'gemini.cmd' : path.join(os.homedir(), '.local', 'bin', 'gemini'));
 
 const C = {
   reset: '\x1b[0m',
