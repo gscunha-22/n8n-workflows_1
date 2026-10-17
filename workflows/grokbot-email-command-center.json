@@ -1,0 +1,1638 @@
+{
+  "name": "GROKBOT - Email Command Center",
+  "nodes": [
+    {
+      "id": "b2a9424b-2492-40c3-b506-3ced711c3101",
+      "name": "Sticky Note e9fcf233",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        120,
+        40
+      ],
+      "parameters": {
+        "content": "## GROKBOT - Email Command Center (2x/Dia - 08h e 18h BRT)\n- **Estagio 1 (Ingestao & Deduplicacao)**: Executa 2x ao dia (08:00 e 18:00 America/Sao_Paulo), busca e-mails nao capturados no Gmail (in:inbox -label:GTD/capturado -from:me), higieniza HTML/MIME, mapeia os 26 labels reais do Gmail e deduplica na Data Table (miZoRxugZfo3CgOj).\n- **Estagio 2 (Motor de Classificacao IA)**: Classifica com Claude Haiku 5.5 + fallback DeepSeek Chat + Structured Output Parser + guardrail deterministico por dominio.\n- **Estagio 3 (Execucao Autonoma & Auditoria)**: Aplica labels reais no Gmail + aciona GTD/Draft, Planilha de Pedidos, Briefing Notion, Zero-Inbox e grava recibo auditavel na Data Table.",
+        "color": 4,
+        "width": 460,
+        "height": 240
+      }
+    },
+    {
+      "id": "02952108-46dc-435a-a701-2bfa0978a366",
+      "name": "Schedule Twice Daily (08h & 18h)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        120,
+        320
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8,18 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "a93b3d04-dfbc-4ad8-86f9-aeda8367d8dc",
+      "name": "Fetch Uncategorized Gmail Batch",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        380,
+        420
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 10,
+        "simple": false,
+        "filters": {
+          "q": "in:inbox -label:GTD/capturado -from:me",
+          "includeSpamTrash": false,
+          "readStatus": "both"
+        },
+        "options": {}
+      },
+      "webhookId": "a6e1b551-4bb9-4d23-b0ff-816105a3782d",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ZxEFozkJjyKGAASP",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "id": "7d3bda1e-6968-473a-9e80-3061ad894719",
+      "name": "Manual Test Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        120,
+        480
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "a5e72bd9-3a48-44ec-8fe3-4cc03aec5fcf",
+      "name": "On-Demand Batch Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        120,
+        640
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "grokbot-email-command-center-run",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "dac17b28-c225-460a-8657-16efdc7bd570"
+    },
+    {
+      "id": "38a3b0d7-5c63-4376-b864-0b0b3a9fc446",
+      "name": "Normalize Email and Label Map",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        420
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const LABEL_MAP = {\n  \"Academia\": \"Label_7\",\n  \"AgentMail\": \"Label_25\",\n  \"Agoda\": \"Label_19\",\n  \"Anthropic\": \"Label_12\",\n  \"Base44\": \"Label_23\",\n  \"ClickUp\": \"Label_22\",\n  \"Consensus\": \"Label_17\",\n  \"Dell\": \"Label_15\",\n  \"GTD\": \"Label_1841439096332930597\",\n  \"GTD/capturado\": \"Label_26\",\n  \"GitHub\": \"Label_2\",\n  \"Gleeden\": \"Label_18\",\n  \"Google Accounts\": \"Label_13\",\n  \"Google Flights\": \"Label_8\",\n  \"Grammarly\": \"Label_9\",\n  \"IFTTT\": \"Label_24\",\n  \"LinkedIn\": \"Label_4\",\n  \"New York Times\": \"Label_14\",\n  \"Notes\": \"Label_1\",\n  \"Perplexity\": \"Label_11\",\n  \"Replit\": \"Label_21\",\n  \"Samsung\": \"Label_6\",\n  \"Simply Wall St\": \"Label_16\",\n  \"Sympla\": \"Label_5\",\n  \"TAAFT\": \"Label_10\",\n  \"Viagogo\": \"Label_20\",\n  \"Yasmim\": \"Label_3\"\n};\nconst availableCategories = Object.keys(LABEL_MAP).join(\", \");\nconst out = [];\nfor (const item of $input.all()) {\n  const raw = item.json.body && typeof item.json.body === \"object\" && !item.json.id ? item.json.body : item.json;\n  const isOutlook = Boolean(\n    (raw.webLink && String(raw.webLink).toLowerCase().includes(\"outlook\")) ||\n    raw[\"@odata.etag\"] ||\n    (raw.body && typeof raw.body === \"object\" && raw.body.content !== undefined && raw.from && raw.from.emailAddress)\n  );\n  const msgId = String(raw.id || raw.message_id || (\"sim_\" + Date.now()));\n  const thrId = String(raw.threadId || raw.thread_id || raw.conversationId || msgId);\n  const headers = raw.headers && typeof raw.headers === \"object\" ? raw.headers : {};\n  const subj = String(raw.subject || raw.Subject || headers.subject || \"(Sem assunto)\").trim();\n  let senderRaw = \"\";\n  if (raw.from && typeof raw.from === \"object\" && raw.from.emailAddress) {\n    const ea = raw.from.emailAddress;\n    senderRaw = ea.name ? (ea.name + \" <\" + ea.address + \">\") : String(ea.address || \"\");\n  } else if (raw.from && typeof raw.from === \"object\") {\n    senderRaw = raw.from.text || (raw.from.value && raw.from.value[0] && (raw.from.value[0].address ? (raw.from.value[0].name ? raw.from.value[0].name + \" <\" + raw.from.value[0].address + \">\" : raw.from.value[0].address) : raw.from.value[0].name)) || \"\";\n  } else if (raw.sender && typeof raw.sender === \"object\" && raw.sender.emailAddress) {\n    const ea = raw.sender.emailAddress;\n    senderRaw = ea.name ? (ea.name + \" <\" + ea.address + \">\") : String(ea.address || \"\");\n  } else {\n    senderRaw = String(raw.from || raw.From || headers.from || raw.sender || \"\");\n  }\n  const emailMatch = senderRaw.match(/<([^>]+)>/);\n  const senderEmail = (emailMatch ? emailMatch[1] : senderRaw).trim().toLowerCase();\n  const senderDomain = senderEmail.includes(\"@\") ? senderEmail.split(\"@\").pop().toLowerCase() : \"\";\n  const existingLabelIds = Array.isArray(raw.labelIds) ? raw.labelIds.map(String) : (Array.isArray(raw.labels) ? raw.labels.map(l => String(l.id || l)) : (Array.isArray(raw.categories) ? raw.categories.map(String) : []));\n  let bodySource = \"\";\n  if (raw.body && typeof raw.body === \"object\" && raw.body.content) {\n    bodySource = String(raw.body.content);\n  } else {\n    bodySource = String(raw.text || raw.textPlain || raw.bodyPreview || raw.snippet || raw.html || raw.textAsHtml || \"\");\n  }\n  const cleanBody = bodySource\n    .replace(/<[^>]*>/g, \" \")\n    .replace(/https?:\\/\\/\\S+/g, \"[link]\")\n    .replace(/\\s+/g, \" \")\n    .trim()\n    .slice(0, 5000);\n  const receivedAt = String(raw.receivedDateTime || raw.date || headers.date || (raw.internalDate ? new Date(Number(raw.internalDate)).toISOString() : new Date().toISOString()));\n  const isSimulated = Boolean(raw.simulated || msgId.startsWith(\"sim_\") || msgId.startsWith(\"msg_webhook_\"));\n  const mailboxSource = isSimulated ? \"simulated\" : (isOutlook ? \"outlook\" : \"gmail\");\n  const skipGmailSideEffects = isSimulated || isOutlook;\n  const emailLink = String(raw.webLink || (\"https://mail.google.com/mail/u/0/#all/\" + thrId));\n  out.push({\n    json: {\n      message_id: msgId,\n      thread_id: thrId,\n      subject: subj,\n      sender_raw: senderRaw,\n      sender_email: senderEmail,\n      sender_domain: senderDomain,\n      received_at: receivedAt,\n      existing_label_ids: existingLabelIds,\n      clean_body: cleanBody || subj,\n      available_categories: availableCategories,\n      label_map: LABEL_MAP,\n      is_simulated: isSimulated,\n      mailbox_source: mailboxSource,\n      skip_gmail_side_effects: skipGmailSideEffects,\n      email_link: emailLink\n    }\n  });\n}\nreturn out;\n"
+      }
+    },
+    {
+      "id": "15425f27-be5b-4d2c-bc88-aca868058452",
+      "name": "Skip Processed Emails",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        900,
+        420
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "rowNotExists",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "miZoRxugZfo3CgOj"
+        },
+        "matchType": "anyCondition",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "message_id",
+              "keyValue": "={{ $json.message_id }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "981aed37-e7fd-4c20-9040-9ece55d26249",
+      "name": "AI Autonomous Email Classifier",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1200,
+        420
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analise e classifique o seguinte e-mail com precisao executiva:\n<email>\nAssunto: {{ $json.subject }}\nRemetente: {{ $json.sender_raw }} (Dominio: {{ $json.sender_domain }})\nData: {{ $json.received_at }}\nCorpo: {{ $json.clean_body }}\n</email>\n\nLABELS DISPONIVEIS NO GMAIL (escolha EXATAMENTE UM para category_name):\n{{ $json.available_categories }}\n\nROTAS AUTONOMAS DISPONIVEIS (escolha EXATAMENTE UMA para intent_route):\n- ACTION_REQUIRED: E-mail exige resposta humana, decisao, aprovacao ou tarefa pratica (GTD + rascunho de resposta).\n- ORDER_TRACKING: Compra, envio, rastreio ou entrega de produto/viagem/ingresso (Amazon, Mercado Livre, Dell, Samsung, Agoda, Sympla, Viagogo, Google Flights).\n- KNOWLEDGE_BRIEFING: Newsletter, artigo analitico, relatorio de IA/mercado/ciencia que merece resumo executivo no Notion (New York Times, Perplexity, Consensus, Simply Wall St, TAAFT).\n- BILL_OR_SUBSCRIPTION: Boleto, fatura, recibo, cobranca ou renovacao de assinatura.\n- LOW_VALUE_PROMO: Marketing de massa, cupom promocional frio ou notificacao descartavel sem acao necessaria (sera marcado como lido e arquivado da Inbox).\n- GENERAL_INFO: Informativo geral, alerta de seguranca ou nota de referencia que deve apenas receber o label na Inbox.",
+        "hasOutputParser": true,
+        "needsFallback": true,
+        "options": {
+          "systemMessage": "Voce e o motor autonomo de triagem executiva e GTD de Guilherme Cunha. Sua missao e classificar cada e-mail em um dos 26 labels reais do Gmail e acionar o braco autonomo correto com conservadorismo factual absoluto: nunca invente valores, datas ou numeros de pedido que nao estejam no texto. Para executive_summary_bullets, escreva ate 5 bullets curtos em portugues. Para suggested_reply_draft, redija um rascunho cordial e objetivo caso action_required seja true."
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "da4b8262-481d-4106-9a75-75e53e30403c",
+      "name": "Claude Haiku 5.5 Primary",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.6,
+      "position": [
+        1120,
+        640
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "claude-haiku-5-5",
+          "cachedResultName": "Claude Haiku 5.5"
+        },
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "credentials": {
+        "anthropicApi": {
+          "id": "RsemhvLaO8UNRY6f",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "id": "2819335e-25c9-41c0-8d5a-a5ec342e9620",
+      "name": "DeepSeek Chat Fallback",
+      "type": "@n8n/n8n-nodes-langchain.lmChatDeepSeek",
+      "typeVersion": 1,
+      "position": [
+        1280,
+        640
+      ],
+      "parameters": {
+        "model": "deepseek-chat",
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "credentials": {
+        "deepSeekApi": {
+          "id": "wzLafmVVqXeRmLxA",
+          "name": "DeepSeek account"
+        }
+      }
+    },
+    {
+      "id": "4771ca36-826c-46f6-a1f8-6898cd748073",
+      "name": "Structured Decision Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1440,
+        640
+      ],
+      "parameters": {
+        "schemaType": "fromJson",
+        "jsonSchemaExample": "{\"category_name\":\"Anthropic\",\"intent_route\":\"ACTION_REQUIRED\",\"confidence\":\"HIGH\",\"action_required\":true,\"gtd_task_title\":\"Confirmar limite de faturamento na conta Anthropic\",\"suggested_reply_draft\":\"Ola equipe Anthropic, confirmo o recebimento e ja validei os dados no painel. Obrigado!\",\"financial_vendor\":\"Anthropic\",\"financial_amount\":\"20,00\",\"financial_currency\":\"USD\",\"due_date_iso\":\"2026-10-25\",\"store_name\":\"\",\"order_number\":\"\",\"order_item\":\"\",\"order_status\":\"\",\"delivery_estimate\":\"\",\"executive_summary_bullets\":\"- Aviso oficial da Anthropic\\n- Solicita confirmacao ate 25/10/2026\",\"reasoning\":\"E-mail oficial da Anthropic solicitando acao com prazo definido.\"}"
+      }
+    },
+    {
+      "id": "fbdc2e52-ca87-4b8c-a196-8ba2b99fb779",
+      "name": "Resolve Decision Contract",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        420
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const srcItems = $(\"Skip Processed Emails\").all();\nconst aiItems = $input.all();\nconst DOMAIN_MAP = {\n  \"anthropic\": \"Anthropic\",\n  \"github\": \"GitHub\",\n  \"linkedin\": \"LinkedIn\",\n  \"sympla\": \"Sympla\",\n  \"agoda\": \"Agoda\",\n  \"dell\": \"Dell\",\n  \"samsung\": \"Samsung\",\n  \"perplexity\": \"Perplexity\",\n  \"clickup\": \"ClickUp\",\n  \"replit\": \"Replit\",\n  \"nytimes\": \"New York Times\",\n  \"newyorktimes\": \"New York Times\",\n  \"grammarly\": \"Grammarly\",\n  \"ifttt\": \"IFTTT\",\n  \"viagogo\": \"Viagogo\",\n  \"simplywall\": \"Simply Wall St\",\n  \"consensus\": \"Consensus\",\n  \"base44\": \"Base44\",\n  \"agentmail\": \"AgentMail\",\n  \"bird.com\": \"AgentMail\",\n  \"gleeden\": \"Gleeden\",\n  \"taaft\": \"TAAFT\",\n  \"theresanaiforthat\": \"TAAFT\",\n  \"accounts.google\": \"Google Accounts\",\n  \"ifood\": \"Notes\",\n  \"canva\": \"Notes\",\n  \"neon\": \"Notes\",\n  \"neon.tech\": \"Notes\",\n  \"x.ai\": \"Notes\",\n  \"grok\": \"Notes\",\n  \"microsoft\": \"Notes\",\n  \"helpcode\": \"Notes\",\n  \"anythingmcp\": \"Notes\",\n  \"heygen\": \"Notes\",\n  \"pabbly\": \"Notes\",\n  \"zeroheight\": \"Notes\"\n};\nconst VALID_ROUTES = {\n  \"ACTION_REQUIRED\": true,\n  \"ORDER_TRACKING\": true,\n  \"KNOWLEDGE_BRIEFING\": true,\n  \"BILL_OR_SUBSCRIPTION\": true,\n  \"LOW_VALUE_PROMO\": true,\n  \"GENERAL_INFO\": true\n};\nfunction cleanVal(v) {\n  if (v === null || v === undefined) return \"\";\n  const s = String(v).trim();\n  const low = s.toLowerCase();\n  if (!s || low === \"não disponível\" || low === \"nao disponivel\" || low === \"n/a\" || low === \"none\" || low === \"null\" || low === \"undefined\" || low === \"vazio\") {\n    return \"\";\n  }\n  return s;\n}\nconst out = [];\nfor (let i = 0; i < srcItems.length; i++) {\n  const base = srcItems[i].json || {};\n  const aiRaw = (aiItems[i] && aiItems[i].json) ? aiItems[i].json : {};\n  let parsed = aiRaw.output && typeof aiRaw.output === \"object\" ? aiRaw.output : aiRaw;\n  if (typeof aiRaw.output === \"string\") {\n    try {\n      const startIdx = aiRaw.output.indexOf(\"{\");\n      const endIdx = aiRaw.output.lastIndexOf(\"}\");\n      if (startIdx !== -1 && endIdx > startIdx) {\n        parsed = JSON.parse(aiRaw.output.slice(startIdx, endIdx + 1));\n      }\n    } catch (e) {}\n  }\n  const labelMap = base.label_map || {};\n  let chosenName = cleanVal(parsed.category_name);\n  if (!labelMap[chosenName]) {\n    const hay = (String(base.sender_raw || \"\") + \" \" + String(base.subject || \"\") + \" \" + String(base.sender_domain || \"\")).toLowerCase();\n    let matchedLabel = \"\";\n    for (const key of Object.keys(DOMAIN_MAP)) {\n      if (hay.includes(key)) {\n        matchedLabel = DOMAIN_MAP[key];\n        break;\n      }\n    }\n    chosenName = matchedLabel || (parsed.action_required ? \"GTD\" : \"Notes\");\n  }\n  const targetLabelId = labelMap[chosenName] || labelMap[\"Notes\"] || \"Label_1\";\n  let route = cleanVal(parsed.intent_route) || \"GENERAL_INFO\";\n  if (!VALID_ROUTES[route]) route = \"GENERAL_INFO\";\n  const finAmount = cleanVal(parsed.financial_amount);\n  const finCurr = cleanVal(parsed.financial_currency) || \"BRL\";\n  out.push({\n    json: {\n      message_id: base.message_id,\n      thread_id: base.thread_id,\n      subject: base.subject,\n      sender_raw: base.sender_raw,\n      sender_email: base.sender_email,\n      sender_domain: base.sender_domain,\n      received_at: base.received_at,\n      email_link: base.email_link,\n      is_simulated: Boolean(base.is_simulated),\n      mailbox_source: base.mailbox_source || (base.is_simulated ? \"simulated\" : \"gmail\"),\n      skip_gmail_side_effects: Boolean(base.skip_gmail_side_effects || base.is_simulated || base.mailbox_source === \"outlook\"),\n      category_name: chosenName,\n      target_label_id: targetLabelId,\n      intent_route: route,\n      confidence: cleanVal(parsed.confidence) || \"HIGH\",\n      action_required: Boolean(parsed.action_required || route === \"ACTION_REQUIRED\"),\n      gtd_task_title: cleanVal(parsed.gtd_task_title) || base.subject,\n      suggested_reply_draft: cleanVal(parsed.suggested_reply_draft),\n      financial_vendor: cleanVal(parsed.financial_vendor) || base.sender_raw || \"\",\n      financial_amount: finAmount,\n      financial_currency: finAmount ? finCurr : \"\",\n      due_date_iso: cleanVal(parsed.due_date_iso),\n      store_name: cleanVal(parsed.store_name) || chosenName,\n      order_number: cleanVal(parsed.order_number) || base.message_id,\n      order_item: cleanVal(parsed.order_item) || base.subject,\n      order_status: cleanVal(parsed.order_status) || \"atualizacao\",\n      delivery_estimate: cleanVal(parsed.delivery_estimate),\n      executive_summary_bullets: cleanVal(parsed.executive_summary_bullets) || cleanVal(parsed.reasoning) || base.subject,\n      reasoning: cleanVal(parsed.reasoning) || (\"Classificado em \" + chosenName + \" via motor hibrido IA + regra de dominio.\")\n    }\n  });\n}\nreturn out;"
+      }
+    },
+    {
+      "id": "aa924d66-e725-4965-a70c-a19b36a40c93",
+      "name": "Apply Dynamic Gmail Labels",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1800,
+        420
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "addLabels",
+        "messageId": "={{ $json.message_id }}",
+        "labelIds": [
+          "={{ $json.target_label_id }}",
+          "Label_26"
+        ]
+      },
+      "onError": "continueRegularOutput",
+      "webhookId": "89f818a0-ba26-4873-b807-359becf75093",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ZxEFozkJjyKGAASP",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "id": "52aca000-c6dc-49a9-b3b9-c586c2dfd356",
+      "name": "Route by Autonomous Intent",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        2060,
+        420
+      ],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "outputKey": "ACTION_GTD",
+              "renameOutput": true,
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Resolve Decision Contract').item.json.intent_route }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "ACTION_REQUIRED"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "ORDER_TRACKING",
+              "renameOutput": true,
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Resolve Decision Contract').item.json.intent_route }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "ORDER_TRACKING"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "KNOWLEDGE_NOTION",
+              "renameOutput": true,
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Resolve Decision Contract').item.json.intent_route }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "KNOWLEDGE_BRIEFING"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "PROMO_ZERO_INBOX",
+              "renameOutput": true,
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Resolve Decision Contract').item.json.intent_route }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "LOW_VALUE_PROMO"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "FINANCE_OR_GENERAL"
+        }
+      }
+    },
+    {
+      "id": "cebd5569-7a47-42d8-8cba-79a4398491c1",
+      "name": "Insert GTD Inbox Task",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2380,
+        100
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "ZJBmyGiW3o9DNhbw"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "text": "={{ '[Email: ' + $('Resolve Decision Contract').item.json.category_name + '] ' + $('Resolve Decision Contract').item.json.gtd_task_title }}",
+            "source": "={{ 'email-ai-command-center-' + ($('Resolve Decision Contract').item.json.mailbox_source || 'gmail') }}",
+            "link": "={{ $('Resolve Decision Contract').item.json.email_link }}",
+            "note": "={{ $('Resolve Decision Contract').item.json.executive_summary_bullets }}",
+            "received_at": "={{ $now.toISO() }}",
+            "pulled": false,
+            "gtd_id": "={{ $('Resolve Decision Contract').item.json.message_id }}"
+          },
+          "schema": [
+            {
+              "id": "text",
+              "displayName": "text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "link",
+              "displayName": "link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "note",
+              "displayName": "note",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "pulled",
+              "displayName": "pulled",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "gtd_id",
+              "displayName": "gtd_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "e8d20a46-1a42-4eb4-91b4-91774eba91b6",
+      "name": "Create Suggested Reply Draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2640,
+        100
+      ],
+      "parameters": {
+        "resource": "draft",
+        "operation": "create",
+        "subject": "={{ 'Re: ' + $('Resolve Decision Contract').item.json.subject }}",
+        "emailType": "text",
+        "message": "={{ $('Resolve Decision Contract').item.json.suggested_reply_draft }}",
+        "options": {
+          "threadId": "={{ $('Resolve Decision Contract').item.json.thread_id }}",
+          "sendTo": "={{ $('Resolve Decision Contract').item.json.sender_email }}"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "webhookId": "076658a5-0867-43ac-a3ee-0f49460baf32",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ZxEFozkJjyKGAASP",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "id": "ccae78c6-38ae-4960-bd60-2e292ce25f06",
+      "name": "Record Audit and Finance Ledger",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2960,
+        420
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "miZoRxugZfo3CgOj"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "message_id": "={{ $('Resolve Decision Contract').item.json.message_id }}",
+            "thread_id": "={{ $('Resolve Decision Contract').item.json.thread_id }}",
+            "sender": "={{ $('Resolve Decision Contract').item.json.sender_raw }}",
+            "subject": "={{ $('Resolve Decision Contract').item.json.subject }}",
+            "category_label": "={{ $('Resolve Decision Contract').item.json.category_name + ' (' + $('Resolve Decision Contract').item.json.target_label_id + ')' }}",
+            "intent_route": "={{ $('Resolve Decision Contract').item.json.intent_route }}",
+            "confidence": "={{ $('Resolve Decision Contract').item.json.confidence }}",
+            "action_taken": "={{ $('Resolve Decision Contract').item.json.intent_route === 'ACTION_REQUIRED' ? 'GTD_TASK_AND_GMAIL_DRAFT' : ($('Resolve Decision Contract').item.json.intent_route === 'ORDER_TRACKING' ? 'SHEETS_ORDER_UPSERT' : ($('Resolve Decision Contract').item.json.intent_route === 'KNOWLEDGE_BRIEFING' ? 'NOTION_BRIEFING_PAGE' : ($('Resolve Decision Contract').item.json.intent_route === 'LOW_VALUE_PROMO' ? 'MARKED_READ_AND_ARCHIVED' : 'LABEL_AND_FINANCE_LEDGER'))) }}",
+            "amount_value": "={{ $('Resolve Decision Contract').item.json.financial_amount ? ($('Resolve Decision Contract').item.json.financial_currency + ' ' + $('Resolve Decision Contract').item.json.financial_amount) : '' }}",
+            "due_or_delivery_date": "={{ $('Resolve Decision Contract').item.json.due_date_iso || $('Resolve Decision Contract').item.json.delivery_estimate || '' }}",
+            "reasoning": "={{ $('Resolve Decision Contract').item.json.reasoning }}",
+            "processed_at": "={{ $now.toISO() }}"
+          },
+          "schema": [
+            {
+              "id": "message_id",
+              "displayName": "message_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "thread_id",
+              "displayName": "thread_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sender",
+              "displayName": "sender",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "category_label",
+              "displayName": "category_label",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intent_route",
+              "displayName": "intent_route",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "confidence",
+              "displayName": "confidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "action_taken",
+              "displayName": "action_taken",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "amount_value",
+              "displayName": "amount_value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "due_or_delivery_date",
+              "displayName": "due_or_delivery_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reasoning",
+              "displayName": "reasoning",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processed_at",
+              "displayName": "processed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "03dcfeb9-e0ea-444c-bbe1-5dda83f06cff",
+      "name": "Upsert Orders Spreadsheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2380,
+        280
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "16OXVoTtQn7A0VLRPE6PywstkghMrrRdzS54q6Iuf2y4"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Untitled"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "numero_pedido"
+          ],
+          "value": {
+            "loja": "={{ $('Resolve Decision Contract').item.json.store_name }}",
+            "numero_pedido": "={{ $('Resolve Decision Contract').item.json.order_number }}",
+            "item": "={{ $('Resolve Decision Contract').item.json.order_item }}",
+            "status": "={{ $('Resolve Decision Contract').item.json.order_status }}",
+            "previsao_entrega": "={{ $('Resolve Decision Contract').item.json.delivery_estimate }}",
+            "ultima_atualizacao": "={{ $now.toISO() }}",
+            "assunto": "={{ $('Resolve Decision Contract').item.json.subject }}",
+            "link_email": "={{ $('Resolve Decision Contract').item.json.email_link }}"
+          },
+          "schema": [
+            {
+              "id": "loja",
+              "displayName": "loja",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "numero_pedido",
+              "displayName": "numero_pedido",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "item",
+              "displayName": "item",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "previsao_entrega",
+              "displayName": "previsao_entrega",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ultima_atualizacao",
+              "displayName": "ultima_atualizacao",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "assunto",
+              "displayName": "assunto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "link_email",
+              "displayName": "link_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "Cm6lBxqBsJKPdQSg",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "61f7cd1e-2239-4ea9-b00e-149dcddb7d07",
+      "name": "Publish Briefing to Notion",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2380,
+        460
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/pages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionOAuth2Api",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ parent: { database_id: '3726f9921f8d44aaa9dc96a4ff4c986c' }, properties: { Name: { title: [{ text: { content: ('[' + $('Resolve Decision Contract').item.json.category_name + '] ' + $('Resolve Decision Contract').item.json.subject).slice(0, 180) } }] }, URL: { url: $('Resolve Decision Contract').item.json.email_link }, Nota: { rich_text: [{ text: { content: ('Remetente: ' + $('Resolve Decision Contract').item.json.sender_raw).slice(0, 1800) } }] }, Resumo: { rich_text: [{ text: { content: String($('Resolve Decision Contract').item.json.executive_summary_bullets || '').slice(0, 1800) } }] }, 'Capturado em': { date: { start: $now.toISO() } } } }) }}"
+      },
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "52XuIla8bgImzWxv",
+          "name": "GROKBOT Notion"
+        }
+      }
+    },
+    {
+      "id": "0847e581-0548-4d76-b32a-fbe7892262c0",
+      "name": "Mark Low Value Promo Read",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2380,
+        640
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "markAsRead",
+        "messageId": "={{ $('Resolve Decision Contract').item.json.message_id }}"
+      },
+      "onError": "continueRegularOutput",
+      "webhookId": "9126d34d-9d97-41fb-856a-3042ca270051",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ZxEFozkJjyKGAASP",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "id": "6e8f3a69-1166-4091-94a3-7c600af06816",
+      "name": "Archive Promo from Inbox",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2640,
+        640
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "removeLabels",
+        "messageId": "={{ $('Resolve Decision Contract').item.json.message_id }}",
+        "labelIds": [
+          "INBOX"
+        ]
+      },
+      "onError": "continueRegularOutput",
+      "webhookId": "6c2c5a86-9838-445e-a284-e5202cb0f61a",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ZxEFozkJjyKGAASP",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "id": "d9a27f68-f52c-411c-903f-72e4826b51d9",
+      "name": "Is Simulated Test Batch?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        260,
+        640
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "or",
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ Boolean($json.body && $json.body.test_suite) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "c2",
+              "leftValue": "={{ Boolean($json.body && $json.body.simulated) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "c3",
+              "leftValue": "={{ $json.body && $json.body.simulated_email ? 'yes' : '' }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "c4",
+              "leftValue": "={{ $json.body && $json.body.emails ? 'yes' : '' }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "c5",
+              "leftValue": "={{ Boolean($json.test_suite || $json.simulated) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true
+      }
+    },
+    {
+      "id": "12fa2584-0241-4b09-b9cc-a6212a393d9f",
+      "name": "Inject Simulated Test Suite",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        720
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const root = $input.first().json || {};\nconst body = (root.body && typeof root.body === 'object') ? root.body : root;\nconst stamp = Date.now();\nconst DEFAULT_SUITE = [\n  {\n    id: 'sim_action_' + stamp + '_1',\n    simulated: true,\n    subject: 'Confirmacao de reuniao e aprovacao de cronograma Anthropic ate sexta',\n    from: 'Anthropic Team <billing@anthropic.com>',\n    text: 'Guilherme, voce pode confirmar se aprovamos o orcamento de USD 120,00 ate 20/10/2026? Precisamos da sua decisao ate sexta-feira.',\n    date: new Date().toISOString()\n  },\n  {\n    id: 'sim_order_' + stamp + '_2',\n    simulated: true,\n    subject: 'Pedido #998877 enviado - Previsao de entrega 22/10/2026',\n    from: 'Dell Order Updates <noreply@dell.com>',\n    text: 'Seu pedido Dell #998877 do item Latitude 5440 foi enviado. Status: em transito. Previsao de entrega: 22/10/2026.',\n    date: new Date().toISOString()\n  },\n  {\n    id: 'sim_bill_' + stamp + '_3',\n    simulated: true,\n    subject: 'Fatura Anthropic API - vencimento 25/10/2026',\n    from: 'Anthropic Billing <billing@anthropic.com>',\n    text: 'Sua fatura Anthropic no valor de USD 45,00 vence em 25/10/2026. Nao e necessario responder.',\n    date: new Date().toISOString()\n  }\n];\nif (body.test_suite === true || body.test_suite === 'true') {\n  return DEFAULT_SUITE.map((e) => ({ json: e }));\n}\nconst emails = Array.isArray(body.emails) ? body.emails\n  : Array.isArray(body.test_emails) ? body.test_emails\n  : (body.simulated_email ? [body.simulated_email] : (body.simulated ? [body] : []));\nreturn emails.filter(Boolean).map((e, i) => ({\n  json: {\n    ...e,\n    id: e.id || e.message_id || ('sim_custom_' + stamp + '_' + i),\n    simulated: true,\n    subject: e.subject || e.Subject || '(Sem assunto)',\n    from: e.from || e.From || e.sender || 'test@example.com',\n    text: e.text || e.body || e.clean_body || e.message || '',\n    date: e.date || new Date().toISOString()\n  }\n}));"
+      }
+    },
+    {
+      "id": "0ab993db-5dae-46cf-b73f-741e15b80956",
+      "name": "Skip Gmail Side Effects if Non-Gmail",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        1680,
+        420
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "sim1",
+              "leftValue": "={{ Boolean($json.skip_gmail_side_effects || $json.is_simulated || $json.mailbox_source === 'outlook') }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true
+      }
+    },
+    {
+      "id": "c8917e9b-e984-44c7-b548-9523a9e7265c",
+      "name": "Skip Draft if Simulated",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        2500,
+        100
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d1",
+              "leftValue": "={{ Boolean($('Resolve Decision Contract').item.json.skip_gmail_side_effects || $('Resolve Decision Contract').item.json.is_simulated || $('Resolve Decision Contract').item.json.mailbox_source === 'outlook') }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true
+      }
+    },
+    {
+      "id": "eec023df-0f19-4f4b-a6f3-936665115f19",
+      "name": "Skip Promo Gmail if Simulated",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        2220,
+        640
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "p1",
+              "leftValue": "={{ Boolean($('Resolve Decision Contract').item.json.skip_gmail_side_effects || $('Resolve Decision Contract').item.json.is_simulated || $('Resolve Decision Contract').item.json.mailbox_source === 'outlook') }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true
+      }
+    },
+    {
+      "id": "ed38514f-d652-40dc-ab3e-d16fda6e9d8d",
+      "name": "Build Executive Digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3220,
+        420
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const cutoffMs = Date.now() - (2.5 * 60 * 60 * 1000);\nconst rows = $input.all().map((i) => i.json || {}).filter((r) => {\n  const ts = Date.parse(String(r.processed_at || r.createdAt || ''));\n  return !isNaN(ts) && ts >= cutoffMs;\n});\nconst total = rows.length;\nconst actions = rows.filter((i) => i.intent_route === 'ACTION_REQUIRED');\nconst orders = rows.filter((i) => i.intent_route === 'ORDER_TRACKING');\nconst bills = rows.filter((i) => i.intent_route === 'BILL_OR_SUBSCRIPTION');\nconst promos = rows.filter((i) => i.intent_route === 'LOW_VALUE_PROMO');\nconst knowledge = rows.filter((i) => i.intent_route === 'KNOWLEDGE_BRIEFING');\nconst now = new Date();\nconst in5 = new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000);\nconst urgentBills = bills.filter((b) => {\n  const due = String(b.due_or_delivery_date || '');\n  if (!due) return false;\n  const d = new Date(due);\n  return !isNaN(d.getTime()) && d >= new Date(now.toISOString().slice(0, 10)) && d <= in5;\n});\nconst should_send = total > 0 && (actions.length + orders.length + bills.length + promos.length + knowledge.length) > 0;\nconst stamp = now.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });\nconst lines = [\n  'GROKBOT Email Command Center — Digest Executivo',\n  'Turno: ' + stamp + ' (America/Sao_Paulo)',\n  'Processados nas ultimas ~2.5h: ' + total,\n  '',\n  'ACTION_REQUIRED (GTD): ' + actions.length,\n  ...(actions.map((a) => '  - ' + (a.subject || '') + ' | ' + (a.action_taken || ''))),\n  '',\n  'Pedidos / entregas: ' + orders.length,\n  ...(orders.map((o) => '  - ' + (o.subject || '') + ' | ' + (o.due_or_delivery_date || ''))),\n  '',\n  'Boletos / faturas: ' + bills.length + (urgentBills.length ? ' (' + urgentBills.length + ' vencem nos proximos 5 dias)' : ''),\n  ...(bills.map((b) => '  - ' + (b.sender || '') + ' ' + (b.amount_value || '') + ' venc. ' + (b.due_or_delivery_date || ''))),\n  '',\n  'Promos silenciados (zero-inbox): ' + promos.length,\n  'Briefings Notion: ' + knowledge.length\n];\nreturn [{ json: { should_send, digest_text: lines.join('\\n'), total, action_count: actions.length, order_count: orders.length, bill_count: bills.length, urgent_bill_count: urgentBills.length, promo_count: promos.length, knowledge_count: knowledge.length } }];"
+      },
+      "onError": "continueRegularOutput",
+      "executeOnce": false
+    },
+    {
+      "id": "384ff028-49e0-4b0f-bc38-9b679acda0a1",
+      "name": "Should Send Digest?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        3460,
+        420
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "s1",
+              "leftValue": "={{ Boolean($json.should_send) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true
+      }
+    },
+    {
+      "id": "3633d465-7b25-44f7-bf09-637a5c06d435",
+      "name": "Send Executive Digest Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        3700,
+        320
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "cdomacedo@gmail.com",
+        "subject": "={{ 'GROKBOT Digest — ' + $now.setZone('America/Sao_Paulo').toFormat('dd/LL/yyyy HH:mm') }}",
+        "emailType": "text",
+        "message": "={{ $json.digest_text }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "onError": "continueRegularOutput",
+      "webhookId": "643d8740-9dba-4317-a6c1-e7b95059a33f",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ZxEFozkJjyKGAASP",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "id": "61d56b35-d32f-4e05-94bf-07db03027a48",
+      "name": "Fetch Uncategorized Outlook Batch",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        380,
+        560
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 10,
+        "output": "raw",
+        "filtersUI": {
+          "values": {
+            "filterBy": "filters",
+            "filters": {
+              "readStatus": "unread",
+              "custom": "isDraft eq false"
+            }
+          }
+        },
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "webhookId": "5efe4378-38c5-4bcc-bc85-dc403f9d64da",
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "PJYOOrEbgsNGxvnL",
+          "name": "Microsoft Outlook account"
+        }
+      }
+    },
+    {
+      "id": "689b5fe6-2d90-4efb-a21c-9a68928395cf",
+      "name": "Schedule Digest (08h05 & 18h05)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        2960,
+        700
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "5 8,18 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "33b4d6ed-b847-47b9-8b6a-94e195849b90",
+      "name": "Get Recent Audit Ledger Rows",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        3180,
+        700
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "miZoRxugZfo3CgOj"
+        },
+        "returnAll": false,
+        "limit": 50,
+        "orderBy": true,
+        "orderByColumn": "createdAt",
+        "orderByDirection": "DESC"
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Twice Daily (08h & 18h)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Uncategorized Gmail Batch",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Uncategorized Outlook Batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Uncategorized Gmail Batch": {
+      "main": [
+        [
+          {
+            "node": "Normalize Email and Label Map",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Test Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Uncategorized Gmail Batch",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Uncategorized Outlook Batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Email and Label Map": {
+      "main": [
+        [
+          {
+            "node": "Skip Processed Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Processed Emails": {
+      "main": [
+        [
+          {
+            "node": "AI Autonomous Email Classifier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Autonomous Email Classifier": {
+      "main": [
+        [
+          {
+            "node": "Resolve Decision Contract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Haiku 5.5 Primary": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Autonomous Email Classifier",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeepSeek Chat Fallback": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Autonomous Email Classifier",
+            "type": "ai_languageModel",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Structured Decision Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Autonomous Email Classifier",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Dynamic Gmail Labels": {
+      "main": [
+        [
+          {
+            "node": "Route by Autonomous Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Autonomous Intent": {
+      "main": [
+        [
+          {
+            "node": "Insert GTD Inbox Task",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upsert Orders Spreadsheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Publish Briefing to Notion",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip Promo Gmail if Simulated",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record Audit and Finance Ledger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Suggested Reply Draft": {
+      "main": [
+        [
+          {
+            "node": "Record Audit and Finance Ledger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Orders Spreadsheet": {
+      "main": [
+        [
+          {
+            "node": "Record Audit and Finance Ledger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish Briefing to Notion": {
+      "main": [
+        [
+          {
+            "node": "Record Audit and Finance Ledger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Low Value Promo Read": {
+      "main": [
+        [
+          {
+            "node": "Archive Promo from Inbox",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Archive Promo from Inbox": {
+      "main": [
+        [
+          {
+            "node": "Record Audit and Finance Ledger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On-Demand Batch Trigger": {
+      "main": [
+        [
+          {
+            "node": "Is Simulated Test Batch?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Simulated Test Batch?": {
+      "main": [
+        [
+          {
+            "node": "Inject Simulated Test Suite",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Uncategorized Gmail Batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inject Simulated Test Suite": {
+      "main": [
+        [
+          {
+            "node": "Normalize Email and Label Map",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Decision Contract": {
+      "main": [
+        [
+          {
+            "node": "Skip Gmail Side Effects if Non-Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert GTD Inbox Task": {
+      "main": [
+        [
+          {
+            "node": "Skip Draft if Simulated",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Draft if Simulated": {
+      "main": [
+        [
+          {
+            "node": "Record Audit and Finance Ledger",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Suggested Reply Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Promo Gmail if Simulated": {
+      "main": [
+        [
+          {
+            "node": "Record Audit and Finance Ledger",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Low Value Promo Read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Executive Digest": {
+      "main": [
+        [
+          {
+            "node": "Should Send Digest?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Send Digest?": {
+      "main": [
+        [
+          {
+            "node": "Send Executive Digest Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Uncategorized Outlook Batch": {
+      "main": [
+        [
+          {
+            "node": "Normalize Email and Label Map",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Gmail Side Effects if Non-Gmail": {
+      "main": [
+        [
+          {
+            "node": "Route by Autonomous Intent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Apply Dynamic Gmail Labels",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Digest (08h05 & 18h05)": {
+      "main": [
+        [
+          {
+            "node": "Get Recent Audit Ledger Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Recent Audit Ledger Rows": {
+      "main": [
+        [
+          {
+            "node": "Build Executive Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true,
+    "timezone": "America/Sao_Paulo"
+  },
+  "staticData": null,
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "pinData": {},
+  "tags": [],
+  "active": true,
+  "id": "3rinE72XzoqIjEvz",
+  "description": "Motor autonomo 2x/dia (08h e 18h BRT) Gmail+Outlook, harness de teste hibrido e digest executivo as 08h05/18h05.",
+  "nodeGroups": [
+    {
+      "id": "2f3759be-6a78-407f-950d-bfff1a1e020e",
+      "name": "2. AI Classification Engine",
+      "nodeNames": [
+        "AI Autonomous Email Classifier",
+        "Claude Haiku 5.5 Primary",
+        "DeepSeek Chat Fallback",
+        "Structured Decision Parser",
+        "Resolve Decision Contract"
+      ],
+      "description": "Classifica com Claude Haiku 5.5 + DeepSeek Chat fallback + Structured Output Parser + guardrail de dominio"
+    },
+    {
+      "id": "b741ba96-9047-4d34-a350-6180f1cc46d3",
+      "name": "3. Autonomous Execution and Audit Ledger",
+      "nodeNames": [
+        "Skip Gmail Side Effects if Non-Gmail",
+        "Apply Dynamic Gmail Labels",
+        "Route by Autonomous Intent",
+        "Insert GTD Inbox Task",
+        "Skip Draft if Simulated",
+        "Create Suggested Reply Draft",
+        "Upsert Orders Spreadsheet",
+        "Publish Briefing to Notion",
+        "Skip Promo Gmail if Simulated",
+        "Mark Low Value Promo Read",
+        "Archive Promo from Inbox",
+        "Record Audit and Finance Ledger"
+      ],
+      "description": "Aplica labels (ou pula se simulado), aciona GTD/Draft/Sheets/Notion/Zero-Inbox e grava ledger"
+    }
+  ]
+}
