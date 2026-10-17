@@ -1,0 +1,7 @@
+# Configuracao do OpenAI Codex / GPT CLI para o repositorio GROKBOT
+
+[mcp_servers.claude]
+url = "https://cloud.anythingmcp.com/mcp/cmvby39vb3n5s01l4ftnfk7gt"
+
+[mcp_servers.anythingmcp]
+url = "https://cloud.anythingmcp.com/mcp/cmvbdpb9l2tbi01l45vejqj1k"

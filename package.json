@@ -1,7 +1,7 @@
 {
   "name": "grokbot-workflows-cli",
-  "version": "1.0.0",
-  "description": "GROKBOT Gemini CLI Gateway & n8n Autonomous Workflows",
+  "version": "1.1.0",
+  "description": "GROKBOT Gemini CLI Gateway, AI CLIs (Gemini, Claude Code, OpenAI Codex/GPT, Cursor) & n8n Autonomous Workflows",
   "private": true,
   "bin": {
     "grokbot-gemini": "./scripts/grokbot-gemini"
@@ -12,6 +12,7 @@
     "gtd": "node ./scripts/grokbot-gemini gtd",
     "triage": "node ./scripts/grokbot-gemini triage",
     "triage:test": "node ./scripts/grokbot-gemini triage --test-suite",
-    "chat": "node ./scripts/grokbot-gemini chat"
+    "chat": "node ./scripts/grokbot-gemini chat",
+    "setup:windows": "powershell -ExecutionPolicy Bypass -File ./scripts/install-windows-ai-cli.ps1"
   }
 }
