@@ -1,0 +1,16 @@
+{
+  "contextFileName": "CLAUDE.md",
+  "general": {
+    "preferredEditor": "cursor"
+  },
+  "model": {
+    "name": "gemini-3-flash-preview"
+  },
+  "mcpServers": {
+    "claude": {
+      "httpUrl": "https://cloud.anythingmcp.com/mcp/cmvby39vb3n5s01l4ftnfk7gt",
+      "url": "https://cloud.anythingmcp.com/mcp/cmvby39vb3n5s01l4ftnfk7gt",
+      "type": "http"
+    }
+  }
+}

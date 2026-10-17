@@ -1,0 +1,4 @@
+description = "Envia uma consulta para o GROKBOT Gemini Executive Agent no n8n (Google Gemini 3 Flash + Ledger + GTD + Gmail + Notion)"
+prompt = """
+Execute o comando `/workspace/scripts/grokbot-gemini ask "{{args}}"` no shell e apresente o resultado retornado pelo GROKBOT Gemini Executive Agent no n8n.
+"""

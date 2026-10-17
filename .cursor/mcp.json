@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "claude": {
+      "type": "http",
+      "url": "https://cloud.anythingmcp.com/mcp/cmvby39vb3n5s01l4ftnfk7gt"
+    }
+  }
+}

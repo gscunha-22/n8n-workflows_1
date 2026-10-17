@@ -1,0 +1,4 @@
+description = "Dispara a triagem autonoma de e-mails no GROKBOT Email Command Center (Google Gemini 3 Flash Primary)"
+prompt = """
+Execute `/workspace/scripts/grokbot-gemini triage --test-suite` seguido de `/workspace/scripts/grokbot-gemini ledger` para validar a classificacao autonoma com Google Gemini 3 Flash no n8n.
+"""

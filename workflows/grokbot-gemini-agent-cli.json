@@ -1,0 +1,225 @@
+{
+  "id": "aL37J7eYs7Prhw0T",
+  "name": "GROKBOT - Gemini Agent & CLI Gateway",
+  "description": "Gateway de Agente Google Gemini 3 Flash + CLI com acesso ao Ledger de Auditoria, Inbox GTD, Gmail e Notion do GROKBOT.",
+  "active": true,
+  "activeVersionId": "cc676951-7479-431c-975e-e578d1719d91",
+  "nodes": [
+    {
+      "id": "53d8db7c-62cd-4246-8e90-738d4ea07570",
+      "name": "Webhook Gemini CLI",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.2,
+      "position": [0, 112],
+      "webhookId": "5bf58bcd-193e-47bb-ac3c-e1569f5f46cf",
+      "parameters": {
+        "authentication": "none",
+        "httpMethod": "POST",
+        "options": {},
+        "path": "grokbot-gemini-agent",
+        "responseData": "firstEntryJson",
+        "responseMode": "lastNode"
+      }
+    },
+    {
+      "id": "1c63bfe3-42e9-424b-9d78-f93cab50ebbd",
+      "name": "GROKBOT Gemini Executive Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [544, 112],
+      "parameters": {
+        "needsFallback": true,
+        "options": {
+          "maxIterations": 8,
+          "systemMessage": "Voce e o GROKBOT Gemini Executive Agent, o assistente executivo autonomo de Guilherme Cunha alimentado pelos modelos Google Gemini (models/gemini-3-flash-preview) no n8n. Voce possui acesso em tempo real as seguintes ferramentas conectadas:\n1) Consultar Ledger de Emails e Financas (tabela GROKBOT Email Command Center Log com e-mails classificados, rotas GTD, faturas, valores, pedidos Dell e prazos);\n2) Consultar Inbox GTD (tabela GROKBOT GTD captura inbox com tarefas GTD capturadas);\n3) Buscar Emails no Gmail (busca mensagens na conta cdomacedo@gmail.com);\n4) Pesquisar Paginas no Notion (busca briefings e capturas no Notion).\n\nInstrucoes:\n- Sempre responda em portugues de forma executiva, objetiva e estruturada.\n- Quando perguntado sobre e-mails processados, faturas, pedidos, gastos ou tarefas GTD recentes, consulte SEMPRE as ferramentas Consultar Ledger de Emails e Financas e/ou Consultar Inbox GTD.\n- Nunca invente dados que nao estejam nas ferramentas."
+        },
+        "promptType": "define",
+        "text": "={{ ($json.body && ($json.body.prompt || $json.body.message || $json.body.query)) || $json.prompt || $json.message || 'Resuma o status recente do GROKBOT Email Command Center consultando a tabela de auditoria.' }}"
+      }
+    },
+    {
+      "id": "b15be60b-04cf-470f-b856-40548dee6f7c",
+      "name": "Google Gemini 3 Flash Primary",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
+      "position": [224, 336],
+      "parameters": {
+        "modelName": "models/gemini-3-flash-preview",
+        "options": {
+          "maxOutputTokens": 2048,
+          "temperature": 0.2
+        }
+      }
+    },
+    {
+      "id": "acb4aacb-bedc-4f69-a0ec-754feb330e5d",
+      "name": "Claude Haiku 4.5 Fallback",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.6,
+      "position": [352, 336],
+      "credentials": {
+        "anthropicApi": {
+          "id": "RsemhvLaO8UNRY6f",
+          "name": "Anthropic account"
+        }
+      },
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "claude-haiku-4-5-20251001"
+        },
+        "options": {
+          "maxTokensToSample": 2048
+        }
+      }
+    },
+    {
+      "id": "6e8954d4-c548-4551-be82-a2958cff64e3",
+      "name": "Memoria Executiva Gemini",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.4,
+      "position": [480, 336],
+      "parameters": {
+        "contextWindowLength": 10,
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ ($('Webhook Gemini CLI').first().json.body && $('Webhook Gemini CLI').first().json.body.sessionId) || 'grokbot-gemini-cli' }}"
+      }
+    },
+    {
+      "id": "cbdcbd92-d445-4952-b0f2-6ca74204c871",
+      "name": "Consultar Ledger de Emails e Financas",
+      "type": "n8n-nodes-base.dataTableTool",
+      "typeVersion": 1.1,
+      "position": [608, 336],
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "cachedResultName": "GROKBOT Email Command Center Log",
+          "mode": "id",
+          "value": "miZoRxugZfo3CgOj"
+        },
+        "limit": 25,
+        "operation": "get",
+        "orderBy": true,
+        "orderByColumn": "createdAt",
+        "orderByDirection": "DESC",
+        "resource": "row",
+        "returnAll": false
+      }
+    },
+    {
+      "id": "1ad567c4-4766-418b-8540-0423bf56c3d5",
+      "name": "Consultar Inbox GTD",
+      "type": "n8n-nodes-base.dataTableTool",
+      "typeVersion": 1.1,
+      "position": [736, 336],
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "cachedResultName": "GROKBOT GTD captura inbox",
+          "mode": "id",
+          "value": "ZJBmyGiW3o9DNhbw"
+        },
+        "limit": 25,
+        "operation": "get",
+        "orderBy": true,
+        "orderByColumn": "createdAt",
+        "orderByDirection": "DESC",
+        "resource": "row",
+        "returnAll": false
+      }
+    },
+    {
+      "id": "d05f36d7-9005-4526-84d8-2d3089fdade5",
+      "name": "Buscar Emails no Gmail",
+      "type": "n8n-nodes-base.gmailTool",
+      "typeVersion": 2.2,
+      "position": [864, 336],
+      "webhookId": "99a75f73-88a1-4c46-a5cc-eda245ec12e5",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ZxEFozkJjyKGAASP",
+          "name": "Gmail account"
+        }
+      },
+      "parameters": {
+        "filters": {
+          "q": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('query', 'Filtro de busca do Gmail, ex: from:anthropic ou is:unread', 'string', '') }}"
+        },
+        "limit": 10,
+        "operation": "getAll",
+        "resource": "message",
+        "returnAll": false,
+        "simple": true
+      }
+    },
+    {
+      "id": "c363964d-eaf1-4cdb-bd59-110149a0f762",
+      "name": "Pesquisar Paginas no Notion",
+      "type": "n8n-nodes-base.notionTool",
+      "typeVersion": 3,
+      "position": [992, 336],
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "52XuIla8bgImzWxv",
+          "name": "GROKBOT Notion"
+        }
+      },
+      "parameters": {
+        "authentication": "oAuth2",
+        "limit": 10,
+        "operation": "search",
+        "resource": "page",
+        "returnAll": false,
+        "simple": true,
+        "text": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('searchText', 'Texto para buscar paginas ou briefings no Notion', 'string', '') }}"
+      }
+    },
+    {
+      "id": "d5fe3d49-9213-47b0-95e9-abcb4867c835",
+      "name": "Format CLI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 112],
+      "parameters": {
+        "jsCode": "const req = $('Webhook Gemini CLI').first().json.body || {};\nconst agentOut = $input.first().json || {};\nreturn [{\n  json: {\n    ok: true,\n    agent: 'GROKBOT Gemini Executive Agent',\n    provider: 'google-gemini',\n    model: 'models/gemini-3-flash-preview',\n    fallbackModel: 'claude-haiku-4-5-20251001',\n    sessionId: req.sessionId || 'grokbot-gemini-cli',\n    prompt: req.prompt || req.message || req.query || 'default-status',\n    response: agentOut.output || '',\n    timestamp: new Date().toISOString()\n  }\n}];",
+        "language": "javaScript",
+        "mode": "runOnceForAllItems"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Gemini CLI": {
+      "main": [[{"node": "GROKBOT Gemini Executive Agent", "type": "main", "index": 0}]]
+    },
+    "GROKBOT Gemini Executive Agent": {
+      "main": [[{"node": "Format CLI Response", "type": "main", "index": 0}]]
+    },
+    "Google Gemini 3 Flash Primary": {
+      "ai_languageModel": [[{"node": "GROKBOT Gemini Executive Agent", "type": "ai_languageModel", "index": 0}]]
+    },
+    "Claude Haiku 4.5 Fallback": {
+      "ai_languageModel": [[{"node": "GROKBOT Gemini Executive Agent", "type": "ai_languageModel", "index": 1}]]
+    },
+    "Memoria Executiva Gemini": {
+      "ai_memory": [[{"node": "GROKBOT Gemini Executive Agent", "type": "ai_memory", "index": 0}]]
+    },
+    "Consultar Ledger de Emails e Financas": {
+      "ai_tool": [[{"node": "GROKBOT Gemini Executive Agent", "type": "ai_tool", "index": 0}]]
+    },
+    "Consultar Inbox GTD": {
+      "ai_tool": [[{"node": "GROKBOT Gemini Executive Agent", "type": "ai_tool", "index": 0}]]
+    },
+    "Buscar Emails no Gmail": {
+      "ai_tool": [[{"node": "GROKBOT Gemini Executive Agent", "type": "ai_tool", "index": 0}]]
+    },
+    "Pesquisar Paginas no Notion": {
+      "ai_tool": [[{"node": "GROKBOT Gemini Executive Agent", "type": "ai_tool", "index": 0}]]
+    }
+  },
+  "settings": {
+    "availableInMCP": true,
+    "executionOrder": "v1"
+  }
+}
